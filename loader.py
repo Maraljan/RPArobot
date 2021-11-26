@@ -27,6 +27,7 @@ class Loader:
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
         self._browser.set_download_directory(str(self.OUTPUT_DIR))
+        self._browser.open_available_browser(self.URL)
 
         if self._file_system.does_file_exist(self.EXCEL_FILE_PATH):
             self._workbook = self._excel.open_workbook(self.EXCEL_FILE_PATH)
