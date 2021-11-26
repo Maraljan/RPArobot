@@ -1,6 +1,5 @@
 import datetime
 import time
-from pathlib import Path
 
 from RPA.Excel.Files import Files
 from RPA.FileSystem import FileSystem
@@ -16,23 +15,24 @@ from utils import index2col_name, wait_for_condition, get_number_entries
 
 class Loader:
     URL = "https://itdashboard.gov/"
-    OUTPUT_DIR = Path('output').absolute()
-    EXCEL_FILE_PATH = OUTPUT_DIR / 'agencies.xlsx'
+    OUTPUT_DIR_NAME = 'output'
 
     def __init__(self):
         self._file_system = FileSystem()
         self._excel = Files()
         self._browser = Selenium()
 
-        self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        self._file_system.create_directory(path=self.OUTPUT_DIR_NAME, parents=True, exist_ok=True)
+        self._output_dir = self._file_system.absolute_path(self.OUTPUT_DIR_NAME)
+        self._excel_file_path = self._file_system.join_path(self._output_dir, 'agencies.xlsx')
+        self._browser.set_download_directory(self._output_dir)
 
-        self._browser.set_download_directory(str(self.OUTPUT_DIR))
         self._browser.open_available_browser(self.URL)
 
-        if self._file_system.does_file_exist(self.EXCEL_FILE_PATH):
-            self._workbook = self._excel.open_workbook(self.EXCEL_FILE_PATH)
+        if self._file_system.does_file_exist(self._excel_file_path):
+            self._workbook = self._excel.open_workbook(self._excel_file_path)
         else:
-            self._workbook = self._excel.create_workbook(self.EXCEL_FILE_PATH, fmt='xlsx')
+            self._workbook = self._excel.create_workbook(self._excel_file_path, fmt='xlsx')
             self._workbook.create_worksheet(ExcelTable.agency)
             self._workbook.create_worksheet(ExcelTable.table_data)
 
@@ -123,9 +123,3 @@ class Loader:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-
-
-# loader = Loader()
-# loader.store_web_page_content()
-# loader.export_table_data()
-# loader.close()
