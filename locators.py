@@ -10,6 +10,7 @@ class HomePageLocators(StrEnum):
     agency_names = 'css:a  span.h4.w200'
     spending_amount = 'css:a  span.h1.w900'
     small_view_btn = 'css:a[class="btn btn-default btn-sm"]'
+    agency_block = 'css:#agency-tiles-widget > div > div > div'
 
 
 class IndividualInvestmentsLocators(StrEnum):
@@ -28,4 +29,3 @@ class BusinessCaseLocators(StrEnum):
 class ExcelTable(StrEnum):
     agency = 'Agencies'
     table_data = 'TableData'
-

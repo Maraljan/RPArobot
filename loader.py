@@ -1,5 +1,6 @@
 import datetime
 import time
+import os
 
 from RPA.Excel.Files import Files
 from RPA.FileSystem import FileSystem
@@ -56,7 +57,7 @@ class Loader:
     def export_table_data(self):
 
         self._browser.wait_until_page_contains_element(HomePageLocators.small_view_btn)
-        self._browser.click_element(HomePageLocators.small_view_btn)
+        self.open_agency(os.getenv('AGENCY_NAME', 'Department of Commerce'))
 
         self._browser.wait_until_page_contains_element(
             IndividualInvestmentsLocators.data_table,
@@ -112,6 +113,16 @@ class Loader:
                 time.sleep(3)
             except AssertionError:
                 pass
+
+    def open_agency(self, agency_name: str):
+        agency_name = agency_name.strip().lower()
+        for el in self._browser.find_elements(HomePageLocators.agency_block):  # type: WebElement
+            name_el = el.find_element_by_css_selector('span.h4.w200')
+
+            if name_el.text.strip().lower() == agency_name:
+                self._browser.click_element(el.find_elements_by_css_selector('a[class="btn btn-default btn-sm"]'))
+                return None
+        raise ValueError(f'Doesnt exist {agency_name} on the page!')
 
     def close(self):
         self._browser.close_browser()
