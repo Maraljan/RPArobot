@@ -30,6 +30,7 @@ class Loader:
 
         self._browser.open_available_browser(self.URL)
 
+        # Open excel file if exists else create excel file.
         if self._file_system.does_file_exist(self._excel_file_path):
             self._workbook = self._excel.open_workbook(self._excel_file_path)
         else:
@@ -55,10 +56,10 @@ class Loader:
             self._workbook.set_cell_value(idx, 'B', self._browser.get_text(amount_el), ExcelTable.agency)
 
     def export_table_data(self):
-
         self._browser.wait_until_page_contains_element(HomePageLocators.small_view_btn)
-        self.open_agency(os.getenv('AGENCY_NAME', 'Department of Commerce'))
 
+        # Choose agency name from os ev
+        self.open_agency(os.getenv('AGENCY_NAME', 'Department of Commerce'))
         self._browser.wait_until_page_contains_element(
             IndividualInvestmentsLocators.data_table,
             datetime.timedelta(seconds=10)
@@ -80,9 +81,9 @@ class Loader:
         # Export to excel headers.
         for idx, header in enumerate(self._browser.find_elements(headers)):
             self._workbook.set_cell_value(1, index2col_name(idx), self._browser.get_text(header), ExcelTable.table_data)
-        hrefs = []
 
         # Export to excel all data from table.
+        hrefs = []
         rows = self._browser.find_elements(IndividualInvestmentsLocators.table_rows)
         for row_idx, row_el in tqdm(
                 iterable=enumerate(rows, 2),
@@ -92,7 +93,7 @@ class Loader:
         ):  # type: int, WebElement
             for col_idx, col in enumerate(row_el.find_elements_by_css_selector('td')):
                 self._workbook.set_cell_value(row_idx, index2col_name(col_idx), col.text, ExcelTable.table_data)
-                # Store all links in hrefs
+                # Store all links in hrefs.
                 if col_idx == 0:
                     try:
                         link = col.find_element_by_tag_name('a')
@@ -102,6 +103,9 @@ class Loader:
         self.open_link_download_pdf(hrefs)
 
     def open_link_download_pdf(self, hrefs: list):
+        """
+        Get link for pdf file and download.
+        """
         for link in tqdm(hrefs, total=len(hrefs), desc='Downloading pdf'):
             self._browser.driver.get(link)
             try:
@@ -115,6 +119,9 @@ class Loader:
                 pass
 
     def open_agency(self, agency_name: str):
+        """
+        Open agency block by name
+        """
         agency_name = agency_name.strip().lower()
         for el in self._browser.find_elements(HomePageLocators.agency_block):  # type: WebElement
             name_el = el.find_element_by_css_selector('span.h4.w200')
