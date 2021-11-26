@@ -111,7 +111,7 @@ class Loader:
                 self._browser.click_element(BusinessCaseLocators.download_pdf)
                 time.sleep(3)
             except AssertionError:
-                print('HELlo MOTHERFUCKER')
+                pass
 
     def close(self):
         self._browser.close_browser()
