@@ -2,6 +2,10 @@ import datetime
 import time
 import os
 
+from pathlib import Path
+from collections import defaultdict
+
+from RPA.PDF import PDF
 from RPA.Excel.Files import Files
 from RPA.FileSystem import FileSystem
 from RPA.Browser.Selenium import Selenium
@@ -22,6 +26,7 @@ class Loader:
         self._file_system = FileSystem()
         self._excel = Files()
         self._browser = Selenium()
+        self._pdf = PDF()
 
         self._file_system.create_directory(path=self.OUTPUT_DIR_NAME, parents=True, exist_ok=True)
         self._output_dir = self._file_system.absolute_path(self.OUTPUT_DIR_NAME)
@@ -78,9 +83,15 @@ class Loader:
 
         headers = IndividualInvestmentsLocators.table_headers
 
-        # Export to excel headers.
-        for idx, header in enumerate(self._browser.find_elements(headers)):
-            self._workbook.set_cell_value(1, index2col_name(idx), self._browser.get_text(header), ExcelTable.table_data)
+        # Export to excel headers from table
+        column_idx = 0
+        for header in self._browser.find_elements(headers):
+            self._workbook.set_cell_value(1, index2col_name(column_idx),
+                                          self._browser.get_text(header), ExcelTable.table_data)
+            column_idx += 1
+        # Add new two columns for data from pdf
+        self._workbook.set_cell_value(1, index2col_name(column_idx), 'Investment Title PDF', ExcelTable.table_data)
+        self._workbook.set_cell_value(1, index2col_name(column_idx + 1), 'UII PDF', ExcelTable.table_data)
 
         # Export to excel all data from table.
         hrefs = []
@@ -104,7 +115,7 @@ class Loader:
 
     def open_link_download_pdf(self, hrefs: list):
         """
-        Get link for pdf file and download.
+        Download pdf files by links.
         """
         for link in tqdm(hrefs, total=len(hrefs), desc='Downloading pdf'):
             self._browser.driver.get(link)
@@ -114,13 +125,13 @@ class Loader:
                     timeout=datetime.timedelta(seconds=10)
                 )
                 self._browser.click_element(BusinessCaseLocators.download_pdf)
-                time.sleep(3)
+                time.sleep(15)
             except AssertionError:
                 pass
 
     def open_agency(self, agency_name: str):
         """
-        Open agency block by name
+        Open agency block by name.
         """
         agency_name = agency_name.strip().lower()
         for el in self._browser.find_elements(HomePageLocators.agency_block):  # type: WebElement
@@ -130,6 +141,25 @@ class Loader:
                 self._browser.click_element(el.find_elements_by_css_selector('a[class="btn btn-default btn-sm"]'))
                 return None
         raise ValueError(f'Doesnt exist {agency_name} on the page!')
+
+    def extract_data_from_pdf(self):
+        """
+        Extract data from pdf and export to excel if data equal with Investment name and UII
+        """
+        uii2row_idx_map = defaultdict(list)
+        empty_index = self._workbook.find_empty_row(ExcelTable.table_data)
+        for row in range(2, empty_index):
+            value = self._workbook.get_cell_value(row, index2col_name(0), ExcelTable.table_data)
+            uii2row_idx_map[value].append(row)
+
+        for file in tqdm(Path(self._output_dir).iterdir(), desc='Compare title and uii', ):
+            if file.suffix == '.pdf':
+                text: str = self._pdf.get_text_from_pdf(file)
+                name_investment = text[1].split('Name of this Investment: ')[1].split('.')[0]
+                uii = text[1].split('Unique Investment Identifier (UII): ')[1].split('Section B')[0]
+                for row_idx in uii2row_idx_map[file.stem]:
+                    self._workbook.set_cell_value(row_idx, index2col_name(7), name_investment, ExcelTable.table_data)
+                    self._workbook.set_cell_value(row_idx, index2col_name(8), uii, ExcelTable.table_data)
 
     def close(self):
         self._browser.close_browser()
