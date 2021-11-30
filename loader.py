@@ -1,10 +1,9 @@
-import datetime
-import time
 import os
-
+import datetime
+from typing import Dict
 from pathlib import Path
-from collections import defaultdict
 
+from tqdm import tqdm
 from RPA.PDF import PDF
 from RPA.Excel.Files import Files
 from RPA.FileSystem import FileSystem
@@ -12,10 +11,8 @@ from RPA.Browser.Selenium import Selenium
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import NoSuchElementException
 
-from tqdm import tqdm
-
-from locators import ExcelTable, HomePageLocators, IndividualInvestmentsLocators, BusinessCaseLocators
 from utils import index2col_name, wait_for_condition, get_number_entries
+from locators import ExcelTable, HomePageLocators, IndividualInvestmentsLocators, BusinessCaseLocators
 
 
 class Loader:
@@ -49,7 +46,8 @@ class Loader:
             HomePageLocators.dive_in_btn, datetime.timedelta(seconds=3),
         )
         self._browser.click_element(HomePageLocators.dive_in_btn)
-        time.sleep(3)
+
+        self._browser.wait_until_page_contains_element(HomePageLocators.agency_block, datetime.timedelta(seconds=3))
 
         # Finds all agencies name and all spending amounts selectors.
         agency_names = self._browser.find_elements(HomePageLocators.agency_names)
@@ -57,13 +55,23 @@ class Loader:
 
         # Export to excel two columns with agencies name and all spending amounts.
         for idx, (name_el, amount_el) in enumerate(zip(agency_names, spending_amounts), 1):
-            self._workbook.set_cell_value(idx, 'A', self._browser.get_text(name_el), ExcelTable.agency)
-            self._workbook.set_cell_value(idx, 'B', self._browser.get_text(amount_el), ExcelTable.agency)
+            self._workbook.set_cell_value(
+                row=idx,
+                column='A',
+                value=self._browser.get_text(name_el),
+                name=ExcelTable.agency,
+            )
+            self._workbook.set_cell_value(
+                row=idx,
+                column='B',
+                value=self._browser.get_text(amount_el),
+                name=ExcelTable.agency,
+            )
 
     def export_table_data(self):
         self._browser.wait_until_page_contains_element(HomePageLocators.small_view_btn)
 
-        # Choose agency name from os ev
+        # Choose agency name from os env
         self.open_agency(os.getenv('AGENCY_NAME', 'Department of Commerce'))
         self._browser.wait_until_page_contains_element(
             IndividualInvestmentsLocators.data_table,
@@ -86,15 +94,29 @@ class Loader:
         # Export to excel headers from table
         column_idx = 0
         for header in self._browser.find_elements(headers):
-            self._workbook.set_cell_value(1, index2col_name(column_idx),
-                                          self._browser.get_text(header), ExcelTable.table_data)
+            self._workbook.set_cell_value(
+                row=1,
+                column=index2col_name(column_idx),
+                value=self._browser.get_text(header),
+                name=ExcelTable.table_data,
+            )
             column_idx += 1
         # Add new two columns for data from pdf
-        self._workbook.set_cell_value(1, index2col_name(column_idx), 'Investment Title PDF', ExcelTable.table_data)
-        self._workbook.set_cell_value(1, index2col_name(column_idx + 1), 'UII PDF', ExcelTable.table_data)
+        self._workbook.set_cell_value(
+            row=1,
+            column=index2col_name(column_idx),
+            value='Investment Title PDF',
+            name=ExcelTable.table_data,
+        )
+        self._workbook.set_cell_value(
+            row=1,
+            column=index2col_name(column_idx + 1),
+            value='UII PDF',
+            name=ExcelTable.table_data,
+        )
 
         # Export to excel all data from table.
-        hrefs = []
+        hrefs = {}
         rows = self._browser.find_elements(IndividualInvestmentsLocators.table_rows)
         for row_idx, row_el in tqdm(
                 iterable=enumerate(rows, 2),
@@ -103,31 +125,55 @@ class Loader:
                 total=len(rows),
         ):  # type: int, WebElement
             for col_idx, col in enumerate(row_el.find_elements_by_css_selector('td')):
-                self._workbook.set_cell_value(row_idx, index2col_name(col_idx), col.text, ExcelTable.table_data)
+                self._workbook.set_cell_value(
+                    row=row_idx,
+                    column=index2col_name(col_idx),
+                    value=col.text,
+                    name=ExcelTable.table_data,
+                )
                 # Store all links in hrefs.
                 if col_idx == 0:
                     try:
                         link = col.find_element_by_tag_name('a')
-                        hrefs.append(link.get_attribute('href'))
+                        hrefs[row_idx] = link.get_attribute('href')
                     except NoSuchElementException:
                         pass
-        self.open_link_download_pdf(hrefs)
+        self.download_pdf_by_link_and_extract_to_excel(hrefs)
 
-    def open_link_download_pdf(self, hrefs: list):
+    def download_pdf_by_link_and_extract_to_excel(self, hrefs: Dict[int, str]):
         """
-        Download pdf files by links.
+        Download pdf files by links. Extract data from pdf and export to excel.
         """
-        for link in tqdm(hrefs, total=len(hrefs), desc='Downloading pdf'):
+        for row_index, link in tqdm(hrefs.items(), total=len(hrefs), desc='Downloading pdf'):
+
             self._browser.driver.get(link)
+            _, link = link.rsplit('/', 1)
+
             try:
                 self._browser.wait_until_page_contains_element(
                     BusinessCaseLocators.download_pdf,
                     timeout=datetime.timedelta(seconds=10)
                 )
                 self._browser.click_element(BusinessCaseLocators.download_pdf)
-                time.sleep(15)
-            except AssertionError:
-                pass
+                path = Path(f'{self._output_dir}/{link}.pdf')
+                wait_for_condition(lambda: path.exists(), timeout=datetime.timedelta(minutes=2))
+                text = self._pdf.get_text_from_pdf(path)
+                name_investment = text[1].split('Name of this Investment: ')[1].split('.')[0]
+                uii = text[1].split('Unique Investment Identifier (UII): ')[1].split('Section B')[0]
+                self._workbook.set_cell_value(
+                    row=row_index,
+                    column=index2col_name(7),
+                    value=name_investment,
+                    name=ExcelTable.table_data,
+                )
+                self._workbook.set_cell_value(
+                    row=row_index,
+                    column=index2col_name(8),
+                    value=uii,
+                    name=ExcelTable.table_data,
+                )
+            except AssertionError as error:
+                print(error)
 
     def open_agency(self, agency_name: str):
         """
@@ -141,25 +187,6 @@ class Loader:
                 self._browser.click_element(el.find_elements_by_css_selector('a[class="btn btn-default btn-sm"]'))
                 return None
         raise ValueError(f'Doesnt exist {agency_name} on the page!')
-
-    def extract_data_from_pdf(self):
-        """
-        Extract data from pdf and export to excel if data equal with Investment name and UII
-        """
-        uii2row_idx_map = defaultdict(list)
-        empty_index = self._workbook.find_empty_row(ExcelTable.table_data)
-        for row in range(2, empty_index):
-            value = self._workbook.get_cell_value(row, index2col_name(0), ExcelTable.table_data)
-            uii2row_idx_map[value].append(row)
-
-        for file in tqdm(Path(self._output_dir).iterdir(), desc='Compare title and uii', ):
-            if file.suffix == '.pdf':
-                text: str = self._pdf.get_text_from_pdf(file)
-                name_investment = text[1].split('Name of this Investment: ')[1].split('.')[0]
-                uii = text[1].split('Unique Investment Identifier (UII): ')[1].split('Section B')[0]
-                for row_idx in uii2row_idx_map[file.stem]:
-                    self._workbook.set_cell_value(row_idx, index2col_name(7), name_investment, ExcelTable.table_data)
-                    self._workbook.set_cell_value(row_idx, index2col_name(8), uii, ExcelTable.table_data)
 
     def close(self):
         self._browser.close_browser()
