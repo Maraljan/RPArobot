@@ -147,6 +147,7 @@ class Loader:
         """
         Download pdf files by links. Extract data from pdf and export to excel.
         """
+        self._log.info('Started logging Pdf')
         for row_index, link in tqdm(hrefs.items(), total=len(hrefs), desc='Downloading pdf'):
 
             self._browser.driver.get(link)
@@ -191,7 +192,8 @@ class Loader:
                 if name_investment_from_pdf != name_investment_from_excel:
                     self._log.warning(f'name Investment excel != pdf ({repr(name_investment_from_excel)}!={repr(name_investment_from_pdf)})')
             except AssertionError as error:
-                print(error)
+                self._log.error(str(error))
+        self._log.info('Finished logging Pdf')
 
     def open_agency(self, agency_name: str):
         """
