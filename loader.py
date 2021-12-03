@@ -11,7 +11,8 @@ from RPA.Browser.Selenium import Selenium
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import NoSuchElementException
 
-from utils import index2col_name, wait_for_condition, get_number_entries
+import logger
+from utils import index2col_name, wait_for_condition, get_number_entries, parse_name_investment_from_text, parse_uii_from_text
 from locators import ExcelTable, HomePageLocators, IndividualInvestmentsLocators, BusinessCaseLocators
 
 
@@ -24,6 +25,7 @@ class Loader:
         self._excel = Files()
         self._browser = Selenium()
         self._pdf = PDF()
+        self._log = logger.get_logger('Loader')
 
         self._file_system.create_directory(path=self.OUTPUT_DIR_NAME, parents=True, exist_ok=True)
         self._output_dir = self._file_system.absolute_path(self.OUTPUT_DIR_NAME)
@@ -137,7 +139,8 @@ class Loader:
                         link = col.find_element_by_tag_name('a')
                         hrefs[row_idx] = link.get_attribute('href')
                     except NoSuchElementException:
-                        pass
+                        self._log.debug(f'Not found href {col.text}')
+
         self.download_pdf_by_link_and_extract_to_excel(hrefs)
 
     def download_pdf_by_link_and_extract_to_excel(self, hrefs: Dict[int, str]):
@@ -157,21 +160,36 @@ class Loader:
                 self._browser.click_element(BusinessCaseLocators.download_pdf)
                 path = Path(f'{self._output_dir}/{link}.pdf')
                 wait_for_condition(lambda: path.exists(), timeout=datetime.timedelta(minutes=2))
+                name_investment_from_excel = self._workbook.get_cell_value(
+                    row=row_index,
+                    column='C',
+                    name=ExcelTable.table_data,
+                )
+                uii_from_excel = self._workbook.get_cell_value(
+                    row=row_index,
+                    column='A',
+                    name=ExcelTable.table_data,
+                )
                 text = self._pdf.get_text_from_pdf(path)
-                name_investment = text[1].split('Name of this Investment: ')[1].split('.')[0]
-                uii = text[1].split('Unique Investment Identifier (UII): ')[1].split('Section B')[0]
+                name_investment_from_pdf = parse_name_investment_from_text(text)
+                uii_from_pdf = parse_uii_from_text(text)
                 self._workbook.set_cell_value(
                     row=row_index,
                     column=index2col_name(7),
-                    value=name_investment,
+                    value=name_investment_from_pdf,
                     name=ExcelTable.table_data,
                 )
                 self._workbook.set_cell_value(
                     row=row_index,
                     column=index2col_name(8),
-                    value=uii,
+                    value=uii_from_pdf,
                     name=ExcelTable.table_data,
                 )
+
+                if uii_from_excel != uii_from_pdf:
+                    self._log.warning(f'UII excel != pdf({repr(uii_from_excel)} != {repr(uii_from_pdf)})')
+                if name_investment_from_pdf != name_investment_from_excel:
+                    self._log.warning(f'name Investment excel != pdf ({repr(name_investment_from_excel)}!={repr(name_investment_from_pdf)})')
             except AssertionError as error:
                 print(error)
 
